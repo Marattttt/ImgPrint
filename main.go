@@ -11,6 +11,9 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"golang.org/x/image/draw"
+	"golang.org/x/term"
 )
 
 func printUsage() {
@@ -43,7 +46,30 @@ func main() {
 		panic(err)
 	}
 
-	printImage(&img)
+	bounds := img.Bounds()
+
+	width := 100
+	height := 100
+
+	if term.IsTerminal(0) {
+		width, height, err = term.GetSize(0)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	if bounds.Dx() >= bounds.Dy() {
+		ratio := float64(bounds.Dx()) / float64(bounds.Dy())
+		height = int(ratio * float64(width))
+	} else {
+		ratio := float64(bounds.Dy()) / float64(bounds.Dx())
+		width = int(ratio * float64(height))
+	}
+
+	scaled := image.NewRGBA(image.Rect(0, 0, width, height))
+	draw.ApproxBiLinear.Scale(scaled, scaled.Rect, img, img.Bounds(), draw.Over, nil)
+
+	printImage(scaled)
 }
 
 type printData struct {
@@ -51,17 +77,17 @@ type printData struct {
 	data []byte
 }
 
-func printImage(img *image.Image) {
+func printImage(img image.Image) {
 	const maxRoutines = 100
-	routines := min((*img).Bounds().Dy()/2, maxRoutines)
+	routines := min(img.Bounds().Dy()/2, maxRoutines)
 
 	printDatas := make([]printData, routines)
 
 	wg := sync.WaitGroup{}
 
-	step := (*img).Bounds().Dy() / routines
+	step := img.Bounds().Dy() / routines
 
-	remainder := (*img).Bounds().Dy()
+	remainder := img.Bounds().Dy()
 	for i := 0; i < routines && remainder > 0; i++ {
 		remainder -= step
 
@@ -88,15 +114,15 @@ func printImage(img *image.Image) {
 	}
 }
 
-func formatImagePart(img *image.Image, startY, endY int) []byte {
+func formatImagePart(img image.Image, startY, endY int) []byte {
 	line := strings.Builder{}
-	bounds := (*img).Bounds()
+	bounds := img.Bounds()
 
 	endY = min(startY, bounds.Max.Y)
 
 	for y := startY; y <= endY; y += 2 {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			col := (*img).At(x, y)
+			col := img.At(x, y)
 			ch := ' '
 			line.WriteString(formatRGB(col, ch))
 		}
