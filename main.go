@@ -48,8 +48,8 @@ func main() {
 
 	bounds := img.Bounds()
 
-	width := 100
-	height := 100
+	width := 50
+	height := 50
 
 	if term.IsTerminal(0) {
 		width, height, err = term.GetSize(0)
@@ -60,10 +60,10 @@ func main() {
 
 	if bounds.Dx() >= bounds.Dy() {
 		ratio := float64(bounds.Dx()) / float64(bounds.Dy())
-		height = int(ratio * float64(width))
+		width = int(ratio * float64(height))
 	} else {
 		ratio := float64(bounds.Dy()) / float64(bounds.Dx())
-		width = int(ratio * float64(height))
+		height = int(ratio * float64(width))
 	}
 
 	scaled := image.NewRGBA(image.Rect(0, 0, width, height))
