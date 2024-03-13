@@ -1,25 +1,47 @@
 package main
 
 import (
-	"cmp"
 	"fmt"
 	"image"
-	"image/color"
 	_ "image/jpeg"
 	_ "image/png"
 	"os"
-	"slices"
-	"strings"
-	"sync"
+	"path/filepath"
 
 	"golang.org/x/image/draw"
 	"golang.org/x/term"
 )
 
 func printUsage() {
-	fmt.Print(`imgprint - a tool for printing a image to terminal using ascii symbols and 24 bit colors
-	Usage: imgpring [PATH TO IMAGE FOR PRINTING]
-`)
+	fmt.Println(`imgprint - a tool for printing a image to terminal using 24 bit colors
+	Usage: imgpring [PATH TO IMAGE FOR PRINTING]`)
+}
+
+func getImageFile(userPath string) *os.File {
+	var imgPath string
+
+	if filepath.IsAbs(userPath) {
+		imgPath = userPath
+	} else if filepath.IsLocal(userPath) {
+		wd, err := os.Getwd()
+		if err != nil {
+			fmt.Println("Could not obtain currecnt working directory")
+		}
+
+		imgPath = filepath.Join(wd, userPath)
+	}
+
+	if _, err := os.Stat(imgPath); os.IsNotExist(err) {
+		fmt.Printf("file %s does not exist", imgPath)
+		return nil
+	}
+
+	file, err := os.Open(imgPath)
+	if err != nil {
+		fmt.Println("Unknown error when opening file")
+		return nil
+	}
+	return file
 }
 
 func main() {
@@ -29,16 +51,13 @@ func main() {
 	}
 
 	imagePath := os.Args[1]
-	println(imagePath)
+	imageFile := getImageFile(imagePath)
 
-	for info, err := os.Stat(imagePath); err != nil || info.IsDir(); {
-		fmt.Println(imagePath + " is not an image")
-		fmt.Scanln(&imagePath)
-	}
-
-	imageFile, err := os.Open(imagePath)
-	if err != nil {
-		panic(err)
+	if imageFile == nil {
+		fmt.Println("Could not open provided file")
+		fmt.Println()
+		printUsage()
+		os.Exit(1)
 	}
 
 	img, _, err := image.Decode(imageFile)
@@ -48,8 +67,8 @@ func main() {
 
 	bounds := img.Bounds()
 
-	width := 50
-	height := 50
+	width := 70
+	height := 70
 
 	if term.IsTerminal(0) {
 		width, height, err = term.GetSize(0)
@@ -70,82 +89,4 @@ func main() {
 	draw.ApproxBiLinear.Scale(scaled, scaled.Rect, img, img.Bounds(), draw.Over, nil)
 
 	printImage(scaled)
-}
-
-type printData struct {
-	id   int
-	data []byte
-}
-
-func printImage(img image.Image) {
-	const maxRoutines = 100
-	routines := min(img.Bounds().Dy()/2, maxRoutines)
-
-	printDatas := make([]printData, routines)
-
-	wg := sync.WaitGroup{}
-
-	step := img.Bounds().Dy() / routines
-
-	remainder := img.Bounds().Dy()
-	for i := 0; i < routines && remainder > 0; i++ {
-		remainder -= step
-
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			partData := formatImagePart(img, i*step, (i+1)*step)
-			printDatas[i] = printData{
-				id:   i,
-				data: partData,
-			}
-
-		}(i)
-	}
-
-	wg.Wait()
-
-	slices.SortFunc(printDatas, func(a printData, b printData) int {
-		return cmp.Compare(a.id, b.id)
-	})
-
-	for _, data := range printDatas {
-		fmt.Print(string(data.data), esc+endCustomColor)
-	}
-}
-
-func formatImagePart(img image.Image, startY, endY int) []byte {
-	line := strings.Builder{}
-	bounds := img.Bounds()
-
-	endY = min(startY, bounds.Max.Y)
-
-	for y := startY; y <= endY; y += 2 {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			col := img.At(x, y)
-			ch := ' '
-			line.WriteString(formatRGB(col, ch))
-		}
-		line.WriteString(esc + endCustomColor + "\n")
-	}
-
-	return []byte(line.String())
-}
-
-const (
-	esc            = "\033"
-	rgbBegin       = "[48;2;"
-	endCustomColor = "[0m"
-)
-
-// The returned text does not terminate the color change
-func formatRGB(col color.Color, char rune) string {
-	r, g, b, a := col.RGBA()
-
-	to256 := func(col, a uint32) uint32 {
-		return uint32(float64(col) / float64(a) * 0xff)
-	}
-
-	formatted := fmt.Sprintf(esc+rgbBegin+"%d;%d;%dm%c", to256(r, a), to256(g, a), to256(b, a), char)
-	return formatted
 }
